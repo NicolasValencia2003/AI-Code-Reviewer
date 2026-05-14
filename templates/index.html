@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Code Reviewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background:#0d1117; color:#e6edf3; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+
+        .drop-zone { border:2px dashed #30363d; transition:border-color .2s,background .2s; }
+        .drop-zone.over { border-color:#818cf8; background:rgba(99,102,241,.06); }
+
+        .spinner { width:32px;height:32px;border:3px solid #21262d;border-top-color:#818cf8;border-radius:50%;animation:spin .8s linear infinite; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+
+        .badge-critical   { background:rgba(248,81,73,.15);  color:#ff7b72; border:1px solid rgba(248,81,73,.35); }
+        .badge-warning    { background:rgba(210,153,34,.2);  color:#e3b341; border:1px solid rgba(210,153,34,.35); }
+        .badge-suggestion { background:rgba(63,185,80,.15);  color:#3fb950; border:1px solid rgba(63,185,80,.35); }
+
+        .row-critical   td:first-child { border-left:3px solid #ff7b72; padding-left:13px; }
+        .row-warning    td:first-child { border-left:3px solid #e3b341; padding-left:13px; }
+        .row-suggestion td:first-child { border-left:3px solid #3fb950; padding-left:13px; }
+
+        tbody tr:hover td { background:rgba(177,186,196,.04); }
+
+        ::-webkit-scrollbar { width:6px;height:6px; }
+        ::-webkit-scrollbar-track { background:#0d1117; }
+        ::-webkit-scrollbar-thumb { background:#30363d;border-radius:3px; }
+        ::-webkit-scrollbar-thumb:hover { background:#484f58; }
+
+        .fade-up { animation:fadeUp .3s ease forwards; }
+        @keyframes fadeUp { from{opacity:0;transform:translateY(10px);} to{opacity:1;transform:translateY(0);} }
+
+        .btn-green { background:#238636;border:1px solid rgba(240,246,252,.1); }
+        .btn-green:hover:not(:disabled) { background:#2ea043; }
+        .btn-green:disabled { opacity:.55;cursor:not-allowed; }
+    </style>
+</head>
+<body class="min-h-screen">
+
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<header style="background:linear-gradient(135deg,#4f46e5,#7c3aed);box-shadow:0 4px 24px rgba(79,70,229,.4);">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg flex items-center justify-center text-xl shrink-0"
+             style="background:rgba(255,255,255,.2);">🔍</div>
+        <div>
+            <h1 class="text-lg font-bold text-white leading-tight">AI Code Reviewer</h1>
+            <p class="text-xs" style="color:rgba(255,255,255,.6);">Seguridad · Clean Code · Complejidad · IA (Claude)</p>
+        </div>
+        <div class="ml-auto flex gap-1.5 flex-wrap justify-end">
+            <span class="px-2 py-0.5 rounded text-xs font-mono" style="background:rgba(255,255,255,.12);color:rgba(255,255,255,.75);">.py</span>
+            <span class="px-2 py-0.5 rounded text-xs font-mono" style="background:rgba(255,255,255,.12);color:rgba(255,255,255,.75);">.js</span>
+            <span class="px-2 py-0.5 rounded text-xs font-mono" style="background:rgba(255,255,255,.12);color:rgba(255,255,255,.75);">.ts</span>
+            <span class="px-2 py-0.5 rounded text-xs font-mono" style="background:rgba(255,255,255,.12);color:rgba(255,255,255,.75);">.java</span>
+        </div>
+    </div>
+</header>
+
+<!-- ── Main ─────────────────────────────────────────────────────────────── -->
+<main class="max-w-5xl mx-auto px-6 py-8">
+
+    <!-- Upload card -->
+    <div class="rounded-xl border mb-8 overflow-hidden" style="background:#161b22;border-color:#30363d;">
+        <div class="px-5 py-3 border-b flex items-center gap-2" style="border-color:#21262d;">
+            <span class="text-sm font-semibold text-white">Subir archivos de código</span>
+        </div>
+        <div class="p-5">
+            <div id="drop-zone"
+                 class="drop-zone rounded-lg py-10 text-center cursor-pointer select-none"
+                 onclick="document.getElementById('file-input').click()">
+                <div class="text-4xl mb-3">📂</div>
+                <p class="font-medium" style="color:#c9d1d9;">Arrastra archivos aquí o haz clic para seleccionar</p>
+                <p class="text-sm mt-1.5" style="color:#8b949e;">
+                    Soporta <code style="color:#a5b4fc;">.py</code> ·
+                    <code style="color:#fde68a;">.js</code> ·
+                    <code style="color:#93c5fd;">.ts</code> ·
+                    <code style="color:#fca5a5;">.java</code>
+                    &nbsp;|&nbsp; Múltiples archivos
+                </p>
+                <input id="file-input" type="file" multiple accept=".py,.js,.ts,.java" class="hidden">
+            </div>
+
+            <!-- Selected files -->
+            <div id="file-list" class="mt-4 hidden">
+                <div id="file-chips" class="flex flex-wrap gap-2 mb-4"></div>
+                <button id="analyze-btn"
+                    class="btn-green px-5 py-2 rounded-lg font-medium text-sm text-white flex items-center gap-2 transition-colors">
+                    <span>🔍</span> Analizar código
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="hidden items-center justify-center flex-col py-12">
+        <div class="spinner mb-4"></div>
+        <p class="text-sm" style="color:#8b949e;">Analizando código con IA...</p>
+    </div>
+
+    <!-- Results -->
+    <div id="results"></div>
+
+</main>
+
+<!-- ── Script ────────────────────────────────────────────────────────────── -->
+<script>
+const dropZone   = document.getElementById('drop-zone');
+const fileInput  = document.getElementById('file-input');
+const fileList   = document.getElementById('file-list');
+const fileChips  = document.getElementById('file-chips');
+const analyzeBtn = document.getElementById('analyze-btn');
+const loading    = document.getElementById('loading');
+const results    = document.getElementById('results');
+
+const SUPPORTED = new Set(['.py','.js','.ts','.java']);
+const FILE_ICONS = { py:'🐍', js:'💛', ts:'🔷', java:'☕' };
+const SEVERITY_LABELS = { critical:'🔴 CRÍTICO', warning:'🟡 ADVERT.', suggestion:'🟢 SUGER.' };
+
+let selectedFiles = [];
+
+function extOf(name) { return '.' + name.split('.').pop().toLowerCase(); }
+function iconOf(name) { return FILE_ICONS[name.split('.').pop().toLowerCase()] || '📄'; }
+function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ── Drag & Drop ─────────────────────────────────────────────────────── */
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('over');
+    setFiles([...e.dataTransfer.files]);
+});
+fileInput.addEventListener('change', () => setFiles([...fileInput.files]));
+
+function setFiles(files) {
+    selectedFiles = files.filter(f => SUPPORTED.has(extOf(f.name)));
+    if (!selectedFiles.length) return;
+
+    fileChips.innerHTML = selectedFiles.map(f =>
+        `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm border"
+               style="background:#0d1117;color:#c9d1d9;border-color:#30363d;">
+            ${iconOf(f.name)} ${esc(f.name)}
+         </span>`
+    ).join('');
+    fileList.classList.remove('hidden');
+}
+
+/* ── Analyze ─────────────────────────────────────────────────────────── */
+analyzeBtn.addEventListener('click', async () => {
+    if (!selectedFiles.length) return;
+
+    results.innerHTML = '';
+    loading.classList.remove('hidden');
+    loading.classList.add('flex');
+    analyzeBtn.disabled = true;
+
+    for (const file of selectedFiles) {
+        const fd = new FormData();
+        fd.append('file', file);
+        try {
+            const res  = await fetch('/analyze', { method:'POST', body:fd });
+            const data = await res.json();
+            res.ok ? renderResult(data) : renderError(file.name, data.detail || 'Error inesperado');
+        } catch {
+            renderError(file.name, 'No se pudo conectar con el servidor.');
+        }
+    }
+
+    loading.classList.add('hidden');
+    loading.classList.remove('flex');
+    analyzeBtn.disabled = false;
+});
+
+/* ── Render: error ───────────────────────────────────────────────────── */
+function renderError(filename, msg) {
+    const el = document.createElement('div');
+    el.className = 'rounded-xl border p-5 mb-5 fade-up';
+    el.style.cssText = 'background:rgba(248,81,73,.07);border-color:rgba(248,81,73,.3);';
+    el.innerHTML = `
+        <p style="color:#ff7b72;" class="font-medium">⚠ Error al analizar <code>${esc(filename)}</code></p>
+        <p class="text-sm mt-1" style="color:#8b949e;">${esc(msg)}</p>`;
+    results.appendChild(el);
+}
+
+/* ── Render: result card ─────────────────────────────────────────────── */
+function renderResult({ filename, findings, summary, llm_assessment }) {
+    const total = summary.critical + summary.warning + summary.suggestion;
+    const card  = document.createElement('div');
+    card.className = 'rounded-xl border mb-6 overflow-hidden fade-up';
+    card.style.cssText = 'background:#161b22;border-color:#30363d;';
+
+    const assessmentHtml = llm_assessment
+        ? `<div class="px-5 py-3 border-b flex gap-2.5 items-start" style="border-color:#21262d;background:rgba(99,102,241,.06);">
+               <span class="text-base shrink-0 mt-0.5">🤖</span>
+               <p class="text-sm leading-relaxed" style="color:#c9d1d9;">${esc(llm_assessment)}</p>
+           </div>`
+        : '';
+
+    /* No findings */
+    if (total === 0) {
+        card.innerHTML = `
+            <div class="px-5 py-3.5 border-b flex items-center gap-2.5" style="border-color:#21262d;">
+                <span class="text-xl">${iconOf(filename)}</span>
+                <span class="font-semibold text-white">${esc(filename)}</span>
+            </div>
+            ${assessmentHtml}
+            <div class="py-12 text-center">
+                <div class="text-5xl mb-3">✅</div>
+                <p class="font-semibold text-lg" style="color:#3fb950;">¡Sin hallazgos!</p>
+                <p class="text-sm mt-1" style="color:#8b949e;">El código está limpio según las reglas configuradas.</p>
+            </div>`;
+        results.appendChild(card);
+        return;
+    }
+
+    /* Summary badges */
+    const badges = [
+        summary.critical   ? `<span class="badge-critical   inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium">🔴 ${summary.critical} crítico${summary.critical!==1?'s':''}</span>` : '',
+        summary.warning    ? `<span class="badge-warning    inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium">🟡 ${summary.warning} advertencia${summary.warning!==1?'s':''}</span>` : '',
+        summary.suggestion ? `<span class="badge-suggestion inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium">🟢 ${summary.suggestion} sugerencia${summary.suggestion!==1?'s':''}</span>` : '',
+    ].filter(Boolean).join('');
+
+    /* Findings rows */
+    const rows = findings.map(f => `
+        <tr class="row-${f.severity} border-b" style="border-color:#21262d;">
+            <td class="px-4 py-2.5">
+                <span class="badge-${f.severity} px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap">
+                    ${SEVERITY_LABELS[f.severity]}
+                </span>
+            </td>
+            <td class="px-3 py-2.5 text-sm whitespace-nowrap" style="color:#8b949e;">${esc(f.category)}</td>
+            <td class="px-3 py-2.5 text-right font-mono text-sm pr-5" style="color:#8b949e;">${f.line}</td>
+            <td class="px-3 py-2.5 text-sm" style="color:#c9d1d9;">${esc(f.message)}</td>
+            <td class="px-3 py-2.5 text-xs" style="color:#8b949e;">${esc(f.suggestion)}</td>
+        </tr>`).join('');
+
+    card.innerHTML = `
+        <div class="px-5 py-3.5 border-b flex flex-wrap items-center justify-between gap-3"
+             style="border-color:#21262d;">
+            <div class="flex items-center gap-2.5">
+                <span class="text-xl">${iconOf(filename)}</span>
+                <span class="font-semibold text-white">${esc(filename)}</span>
+                <span class="text-sm" style="color:#8b949e;">${total} hallazgo${total!==1?'s':''}</span>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">${badges}</div>
+        </div>
+        ${assessmentHtml}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead style="background:#0d1117;">
+                    <tr class="text-xs uppercase tracking-wider" style="color:#8b949e;">
+                        <th class="px-4 py-2.5 text-left font-medium">Sev.</th>
+                        <th class="px-3 py-2.5 text-left font-medium">Categoría</th>
+                        <th class="px-3 py-2.5 text-right font-medium pr-5">Línea</th>
+                        <th class="px-3 py-2.5 text-left font-medium">Hallazgo</th>
+                        <th class="px-3 py-2.5 text-left font-medium">Sugerencia</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+    results.appendChild(card);
+}
+</script>
+</body>
+</html>
